@@ -24,7 +24,7 @@ A terminal-based typing test application written in Go that helps improve your t
 
 ```bash
 git clone https://github.com/arjunsharmahehe/FastFingers.git
-cd typingTest/src
+cd FastFingers/src
 go mod download
 go build -o fastfinger .
 ```
