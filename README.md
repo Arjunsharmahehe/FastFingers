@@ -46,6 +46,11 @@ Start the typing test with regular English paragraphs:
 ./fastfinger
 ```
 
+Add a custom time limit in seconds (defaults to 60 seconds)
+```bash
+./fastfinger -time=15
+```
+
 ### Python Code Mode
 
 Practice typing Python code snippets:
@@ -114,7 +119,7 @@ Edit `paragraphs.go` to add new content to either the `paragraphs` array (Englis
 ## Future Enhancements
 
 - [ ] Support for other programming languages (JavaScript, Java, etc.)
-- [ ] Customizable test duration
+- [x] Customizable test duration
 - [ ] Statistics persistence and progress tracking
 - [ ] Difficulty levels with varying text complexity
 - [ ] Export results to file
