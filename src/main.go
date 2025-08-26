@@ -30,6 +30,7 @@ var (
 	typedChars  int
 	errors      int
 	cursorPos   int
+	elapsedTime time.Duration
 )
 
 // setup initial state of the application
@@ -59,10 +60,11 @@ func setup(pythonFlag *bool) {
 	typedChars = 0
 	errors = 0
 	testStarted = false
+	elapsedTime = 0
 }
 
 // redrawScreen clears the terminal and redraws the entire UI.
-func redrawScreen() {
+func redrawScreen(timeLimit *int) {
 	// Clear the terminal screen
 	termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
 
@@ -77,21 +79,24 @@ func redrawScreen() {
 
 	var wpm float64
 	var accuracy float64
-	var elapsedTime time.Duration
 
 	if testStarted {
 		elapsedTime = time.Since(startTime)
 		elapsedMinutes := elapsedTime.Minutes()
 		if elapsedMinutes > 0 {
 			// WPM = (all typed characters / 5) / time in minutes
-			wpm = (float64(typedChars) / 5.0) / elapsedMinutes
+			if elapsedTime.Seconds() > float64(*timeLimit) {
+				wpm = (float64(typedChars) / 5.0) / (float64(*timeLimit) / 60.0)
+			} else {
+				wpm = (float64(typedChars) / 5.0) / elapsedMinutes
+			}
 		}
 		if typedChars > 0 {
 			accuracy = (float64(typedChars-errors) / float64(typedChars)) * 100
 		}
 	}
 
-	statsTime := fmt.Sprintf("%.1fs", elapsedTime.Seconds())
+	statsTime := fmt.Sprintf("%.1fs", min(elapsedTime.Seconds(), float64(*timeLimit)))
 	statsWPM := fmt.Sprintf("%.0f WPM", wpm)
 	statsAccuracy := fmt.Sprintf("%.1f%% acc", accuracy)
 	statsX := (width - len(statsTime) - len(statsWPM) - len(statsAccuracy) - 6) / 2
@@ -173,7 +178,7 @@ func redrawScreen() {
 	if resultY <= y {
 		resultY = y + 2
 	}
-	if cursorPos >= len(testText) {
+	if cursorPos >= len(testText) || elapsedTime.Seconds() >= float64(*timeLimit) {
 		resultLine1 := "Test Complete!"
 		resultLine2 := fmt.Sprintf("Final WPM: %.0f | Final Accuracy: %.1f%%", wpm, accuracy)
 		resultLine3 := "Press ESC to exit or R to restart."
@@ -201,6 +206,7 @@ func main() {
 
 	var (
 		pythonFlag = flag.Bool("py", false, "Test on Python code like text")
+		timeLimit  = flag.Int("time", 60, "Time limit for the test in seconds")
 	)
 
 	flag.Parse()
@@ -218,7 +224,7 @@ func main() {
 	// Main event loop
 	for {
 		// Redraw the screen on every iteration
-		redrawScreen()
+		redrawScreen(timeLimit)
 
 		// Wait for an event
 		ev := termbox.PollEvent()
@@ -231,18 +237,18 @@ func main() {
 			}
 
 			// --- Handle Restarting ---
-			if (ev.Ch == 'r' || ev.Ch == 'R') && cursorPos >= len(testText) {
+			if (ev.Ch == 'r' || ev.Ch == 'R') && (cursorPos >= len(testText) || elapsedTime.Seconds() >= float64(*timeLimit)) {
 				setup(pythonFlag)
 				continue
 			}
 
 			// If test is finished, ignore other key presses
-			if cursorPos >= len(testText) {
+			if cursorPos >= len(testText) || elapsedTime.Seconds() >= float64(*timeLimit) {
 				continue
 			}
 
 			// --- Handle Backspace ---
-			if ev.Key == termbox.KeyBackspace || ev.Key == termbox.KeyBackspace2 {
+			if (ev.Key == termbox.KeyBackspace || ev.Key == termbox.KeyBackspace2) && elapsedTime.Seconds() < float64(*timeLimit) {
 				if cursorPos > 0 {
 					// Move cursor back
 					states[cursorPos].isCursor = false
@@ -259,7 +265,7 @@ func main() {
 						states[cursorPos].correct = false
 					}
 				}
-			} else if ev.Ch != 0 || ev.Key == termbox.KeySpace {
+			} else if (ev.Ch != 0 || ev.Key == termbox.KeySpace) && elapsedTime.Seconds() < float64(*timeLimit) {
 				// --- Handle Character Input ---
 
 				// Start the timer on the first keypress
