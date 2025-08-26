@@ -44,17 +44,16 @@ func writeToCSV(filename string, wpm float64, accuracy float64) error {
 
 	// If it is the same, why write it?
 	if err == nil {
-		// Use tolerance for floating point comparison
 		const tolerance = 0.1
 		wmpSame := math.Abs(lastWPM-wpm) < tolerance
 		accuracySame := math.Abs(lastAccuracy-accuracy) < tolerance
 
 		if wmpSame && accuracySame {
-			return nil // Skip writing duplicate
+			return nil
 		}
 	}
 
-	// Check if file exists to determine if we need header
+	// Check if file exists (does it need a new header)
 	fileExists := true
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
 		fileExists = false
