@@ -23,7 +23,7 @@ A terminal-based typing test application written in Go that helps improve your t
 ### Install from source
 
 ```bash
-git clone https://github.com/arjunsharmahehe/FastFinger.git
+git clone https://github.com/arjunsharmahehe/FastFingers.git
 cd typingTest/src
 go mod download
 go build -o fastfinger .
