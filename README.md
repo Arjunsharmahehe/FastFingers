@@ -58,7 +58,7 @@ Practice typing Python code snippets:
 
 - **Type normally** - Characters will be highlighted green (correct) or red (incorrect)
 - **Escape** - Exit the application
-- **R** - Restart with a new paragraph (after completing current test)
+- **Ctrl+C | R** - Restart with a new paragraph (after completing current test)
 
 ## How It Works
 
@@ -89,7 +89,6 @@ Practice typing Python code snippets:
 ## Dependencies
 
 - [termbox-go](https://github.com/nsf/termbox-go) - Cross-platform terminal UI library
-- [go-runewidth](https://github.com/mattn/go-runewidth) - Unicode character width calculation
 
 ## Development
 
