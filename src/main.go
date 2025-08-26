@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"math/big"
+	"os"
 	"time"
 	"unicode"
 
@@ -32,6 +33,21 @@ var (
 	cursorPos   int
 	elapsedTime time.Duration
 )
+
+func openOrCreateCSV(filename string) (*os.File, error) {
+	return os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+}
+
+func writeToCSV(filename string, wpm float64, accuracy float64) error {
+	file, err := openOrCreateCSV(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.WriteString(fmt.Sprintf("%.0f,%.1f\n", wpm, accuracy))
+	return err
+}
 
 // setup initial state of the application
 func setup(pythonFlag *bool) {
@@ -65,13 +81,12 @@ func setup(pythonFlag *bool) {
 
 // redrawScreen clears the terminal and redraws the entire UI.
 func redrawScreen(timeLimit *int) {
-	// Clear the terminal screen
+
 	termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
 
-	// Get terminal dimensions
 	width, height := termbox.Size()
 
-	// --- Draw the stats at the bottom ---
+	// Draw the stats at the bottom
 	statsY := 0
 	// if statsY < y+2 { // Ensure stats don't overlap with text
 	// 	statsY = y + 2
@@ -117,7 +132,7 @@ func redrawScreen(timeLimit *int) {
 		termbox.SetCell(i+statsX+len(statsTime)+len(statsWPM)+len(" | ")+len(" | "), statsY, char, termbox.ColorLightGreen|termbox.AttrBold, termbox.ColorDefault)
 	}
 
-	// --- Draw the typing text ---
+	// Draw the typing text
 	x, y := 4, 2
 	for _, s := range states {
 		fg := termbox.ColorDarkGray
@@ -129,15 +144,13 @@ func redrawScreen(timeLimit *int) {
 			fg = termbox.ColorBlack
 		} else if s.typed {
 			if s.correct {
-				// Green for correctly typed characters
 				fg = termbox.ColorGreen
 			} else {
-				// Red for incorrectly typed characters
 				fg = termbox.ColorRed
 			}
 		}
 
-		// Handle word wrapping
+		// Handle word wrapping (manual text wrapping go burrr)
 		if x >= width-4 {
 			x = 4
 			y++
@@ -152,7 +165,7 @@ func redrawScreen(timeLimit *int) {
 		x++
 	}
 
-	// --- Draw instructions if the test hasn't started ---
+	// Draw instructions if the test hasn't started
 	if !testStarted {
 		instructions := "Start typing to begin the test."
 		startX := (width - len(instructions)) / 2
@@ -161,9 +174,10 @@ func redrawScreen(timeLimit *int) {
 		}
 	}
 
-	// --- Controls guide ---
+	//Controls guide
 	controlY := height - 2
-	if (controlY) <= y+2 { // Ensure controls don't overlap with text
+	if (controlY) <= y+2 {
+		// Ensure controls don't overlap with text
 		controlY = y + 2
 	}
 
@@ -173,7 +187,7 @@ func redrawScreen(timeLimit *int) {
 		termbox.SetCell(i+controlsX, controlY, char, termbox.ColorDarkGray, termbox.ColorDefault)
 	}
 
-	// --- Draw final results if the test is complete ---
+	// Draw final results if the test is complete
 	resultY := ((height - 4) / 2) + 2
 	if resultY <= y {
 		resultY = y + 2
@@ -182,6 +196,8 @@ func redrawScreen(timeLimit *int) {
 		resultLine1 := "Test Complete!"
 		resultLine2 := fmt.Sprintf("Final WPM: %.0f | Final Accuracy: %.1f%%", wpm, accuracy)
 		resultLine3 := "Press ESC to exit or R to restart."
+
+		writeToCSV("results.csv", wpm, accuracy)
 
 		startX1 := (width - len(resultLine1)) / 2
 		startX2 := (width - len(resultLine2)) / 2
@@ -198,7 +214,7 @@ func redrawScreen(timeLimit *int) {
 		}
 	}
 
-	// Flush the buffer to the screen
+	// Flush the buffer to the screen (renders it on the terminal)
 	termbox.Flush()
 }
 
@@ -218,25 +234,23 @@ func main() {
 	// Ensure termbox is closed properly on exit
 	defer termbox.Close()
 
-	// Set up the initial state
 	setup(pythonFlag)
 
 	// Main event loop
 	for {
-		// Redraw the screen on every iteration
+
 		redrawScreen(timeLimit)
 
 		// Wait for an event
 		ev := termbox.PollEvent()
 
-		// Handle events based on their type
 		if ev.Type == termbox.EventKey {
-			// --- Handle Quitting ---
+			// Handle Quitting
 			if ev.Key == termbox.KeyEsc || ev.Key == termbox.KeyCtrlC {
 				return // Exit the loop and the program
 			}
 
-			// --- Handle Restarting ---
+			// Handle Restarting
 			if (ev.Ch == 'r' || ev.Ch == 'R') && (cursorPos >= len(testText) || elapsedTime.Seconds() >= float64(*timeLimit)) {
 				setup(pythonFlag)
 				continue
@@ -247,7 +261,7 @@ func main() {
 				continue
 			}
 
-			// --- Handle Backspace ---
+			// Handle Backspace
 			if (ev.Key == termbox.KeyBackspace || ev.Key == termbox.KeyBackspace2) && elapsedTime.Seconds() < float64(*timeLimit) {
 				if cursorPos > 0 {
 					// Move cursor back
@@ -266,7 +280,7 @@ func main() {
 					}
 				}
 			} else if (ev.Ch != 0 || ev.Key == termbox.KeySpace) && elapsedTime.Seconds() < float64(*timeLimit) {
-				// --- Handle Character Input ---
+				// Handle Character Input
 
 				// Start the timer on the first keypress
 				if !testStarted {
