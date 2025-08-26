@@ -104,3 +104,5 @@ config.local.*
 *.pem
 *.key
 *.crt
+
+src/*.csv

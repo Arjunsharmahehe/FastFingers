@@ -5,11 +5,8 @@ import (
 	"encoding/csv"
 	"flag"
 	"fmt"
-	"io"
-	"math"
 	"math/big"
 	"os"
-	"strconv"
 	"time"
 	"unicode"
 
@@ -29,29 +26,17 @@ type charState struct {
 
 // Global state for the application
 var (
-	startTime   time.Time
-	testStarted bool
-	states      []charState
-	typedChars  int
-	errors      int
-	cursorPos   int
-	elapsedTime time.Duration
+	startTime     time.Time
+	testStarted   bool
+	testCompleted bool
+	states        []charState
+	typedChars    int
+	errors        int
+	cursorPos     int
+	elapsedTime   time.Duration
 )
 
 func writeToCSV(filename string, wpm float64, accuracy float64) error {
-	// Check the last rec for dupes
-	lastWPM, lastAccuracy, err := getLastRecord(filename)
-
-	// If it is the same, why write it?
-	if err == nil {
-		const tolerance = 0.1
-		wmpSame := math.Abs(lastWPM-wpm) < tolerance
-		accuracySame := math.Abs(lastAccuracy-accuracy) < tolerance
-
-		if wmpSame && accuracySame {
-			return nil
-		}
-	}
 
 	// Check if file exists (does it need a new header)
 	fileExists := true
@@ -86,56 +71,6 @@ func writeToCSV(filename string, wpm float64, accuracy float64) error {
 	return writer.Write(record)
 }
 
-func getLastRecord(filename string) (float64, float64, error) {
-	// Check if file exists
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		return 0, 0, fmt.Errorf("file does not exist")
-	}
-
-	file, err := os.Open(filename)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-	var lastRecord []string
-	isFirstRow := true
-
-	// Read all records to get the last one
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return 0, 0, err
-		}
-
-		// Skip header row
-		if isFirstRow {
-			isFirstRow = false
-			continue
-		}
-		lastRecord = record
-	}
-
-	// If no data records found (only header or empty file)
-	if len(lastRecord) < 2 {
-		return 0, 0, fmt.Errorf("no previous data records")
-	}
-
-	// Parse the last record
-	wpm, err1 := strconv.ParseFloat(lastRecord[0], 64)
-	accuracy, err2 := strconv.ParseFloat(lastRecord[1], 64)
-
-	if err1 != nil || err2 != nil {
-		return 0, 0, fmt.Errorf("error parsing last record")
-	}
-
-	return wpm, accuracy, nil
-}
-
 // setup initial state of the application
 func setup(pythonFlag *bool) {
 	// Re-select a random paragraph for restart
@@ -163,6 +98,7 @@ func setup(pythonFlag *bool) {
 	typedChars = 0
 	errors = 0
 	testStarted = false
+	testCompleted = false
 	elapsedTime = 0
 }
 
@@ -284,8 +220,6 @@ func redrawScreen(timeLimit *int) {
 		resultLine2 := fmt.Sprintf("Final WPM: %.0f | Final Accuracy: %.1f%%", wpm, accuracy)
 		resultLine3 := "Press ESC to exit or R to restart."
 
-		writeToCSV("results.csv", wpm, accuracy)
-
 		startX1 := (width - len(resultLine1)) / 2
 		startX2 := (width - len(resultLine2)) / 2
 		startX3 := (width - len(resultLine3)) / 2
@@ -298,6 +232,12 @@ func redrawScreen(timeLimit *int) {
 		}
 		for i, char := range resultLine3 {
 			termbox.SetCell(startX3+i, resultY+2, char, termbox.ColorDarkGray, termbox.ColorDefault)
+		}
+
+		// Only write to CSV once when test completes
+		if !testCompleted {
+			writeToCSV("results.csv", wpm, accuracy)
+			testCompleted = true
 		}
 	}
 
