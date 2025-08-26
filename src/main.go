@@ -1,0 +1,299 @@
+package main
+
+import (
+	"crypto/rand"
+	"flag"
+	"fmt"
+	"math/big"
+	"time"
+	"unicode"
+
+	"github.com/nsf/termbox-go"
+)
+
+var paragraphIdx int
+var testText string
+
+// A struct to hold the state of each character in the test.
+type charState struct {
+	char     rune
+	correct  bool
+	typed    bool
+	isCursor bool
+}
+
+// Global state for the application
+var (
+	startTime   time.Time
+	testStarted bool
+	states      []charState
+	typedChars  int
+	errors      int
+	cursorPos   int
+)
+
+// setup initial state of the application
+func setup(pythonFlag *bool) {
+	// Re-select a random paragraph for restart
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(paragraphs))))
+	if err != nil {
+		panic("Error selecting a test paragraph")
+	}
+	paragraphIdx = int(n.Int64())
+	if *pythonFlag {
+		testText = pythonParagraph[paragraphIdx]
+	} else {
+		testText = paragraphs[paragraphIdx]
+	}
+
+	// Initialize the states slice based on the testText
+	states = make([]charState, len(testText))
+	for i, char := range testText {
+		states[i] = charState{char: char}
+	}
+	// Set the initial cursor position
+	if len(states) > 0 {
+		states[0].isCursor = true
+	}
+	cursorPos = 0
+	typedChars = 0
+	errors = 0
+	testStarted = false
+}
+
+// redrawScreen clears the terminal and redraws the entire UI.
+func redrawScreen() {
+	// Clear the terminal screen
+	termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
+
+	// Get terminal dimensions
+	width, height := termbox.Size()
+
+	// --- Draw the stats at the bottom ---
+	statsY := 0
+	// if statsY < y+2 { // Ensure stats don't overlap with text
+	// 	statsY = y + 2
+	// }
+
+	var wpm float64
+	var accuracy float64
+	var elapsedTime time.Duration
+
+	if testStarted {
+		elapsedTime = time.Since(startTime)
+		elapsedMinutes := elapsedTime.Minutes()
+		if elapsedMinutes > 0 {
+			// WPM = (all typed characters / 5) / time in minutes
+			wpm = (float64(typedChars) / 5.0) / elapsedMinutes
+		}
+		if typedChars > 0 {
+			accuracy = (float64(typedChars-errors) / float64(typedChars)) * 100
+		}
+	}
+
+	statsTime := fmt.Sprintf("%.1fs", elapsedTime.Seconds())
+	statsWPM := fmt.Sprintf("%.0f WPM", wpm)
+	statsAccuracy := fmt.Sprintf("%.1f%% acc", accuracy)
+	statsX := (width - len(statsTime) - len(statsWPM) - len(statsAccuracy) - 6) / 2
+
+	for i, char := range statsTime {
+		termbox.SetCell(i+statsX, statsY, char, termbox.ColorBlue|termbox.AttrBold, termbox.ColorDefault)
+	}
+	for i, char := range " | " {
+		termbox.SetCell(i+statsX+len(statsTime), statsY, char, termbox.ColorDefault, termbox.ColorDefault)
+	}
+	for i, char := range statsWPM {
+		termbox.SetCell(i+statsX+len(statsTime)+len(" | "), statsY, char, termbox.ColorLightYellow|termbox.AttrBold, termbox.ColorDefault)
+	}
+	for i, char := range " | " {
+		termbox.SetCell(i+statsX+len(statsTime)+len(statsWPM)+len(" | "), statsY, char, termbox.ColorDefault, termbox.ColorDefault)
+	}
+	for i, char := range statsAccuracy {
+		termbox.SetCell(i+statsX+len(statsTime)+len(statsWPM)+len(" | ")+len(" | "), statsY, char, termbox.ColorLightGreen|termbox.AttrBold, termbox.ColorDefault)
+	}
+
+	// --- Draw the typing text ---
+	x, y := 4, 2
+	for _, s := range states {
+		fg := termbox.ColorDarkGray
+		bg := termbox.ColorDefault
+
+		if s.isCursor {
+			// Highlight the cursor position
+			bg = termbox.ColorWhite
+			fg = termbox.ColorBlack
+		} else if s.typed {
+			if s.correct {
+				// Green for correctly typed characters
+				fg = termbox.ColorGreen
+			} else {
+				// Red for incorrectly typed characters
+				fg = termbox.ColorRed
+			}
+		}
+
+		// Handle word wrapping
+		if x >= width-4 {
+			x = 4
+			y++
+		}
+		termbox.SetCell(x, y, s.char, fg, bg)
+
+		// Set the physical cursor position to follow the character cursor
+		if s.isCursor {
+			termbox.SetCursor(x, y)
+		}
+
+		x++
+	}
+
+	// --- Draw instructions if the test hasn't started ---
+	if !testStarted {
+		instructions := "Start typing to begin the test."
+		startX := (width - len(instructions)) / 2
+		for i, char := range instructions {
+			termbox.SetCell(startX+i, height/2, char, termbox.ColorYellow, termbox.ColorDefault)
+		}
+	}
+
+	// --- Controls guide ---
+	controlY := height - 2
+	if (controlY) <= y+2 { // Ensure controls don't overlap with text
+		controlY = y + 2
+	}
+
+	controls := "-- press ESC to exit --"
+	controlsX := (width - len(controls)) / 2
+	for i, char := range controls {
+		termbox.SetCell(i+controlsX, controlY, char, termbox.ColorDarkGray, termbox.ColorDefault)
+	}
+
+	// --- Draw final results if the test is complete ---
+	resultY := ((height - 4) / 2) + 2
+	if resultY <= y {
+		resultY = y + 2
+	}
+	if cursorPos >= len(testText) {
+		resultLine1 := "Test Complete!"
+		resultLine2 := fmt.Sprintf("Final WPM: %.0f | Final Accuracy: %.1f%%", wpm, accuracy)
+		resultLine3 := "Press ESC to exit or R to restart."
+
+		startX1 := (width - len(resultLine1)) / 2
+		startX2 := (width - len(resultLine2)) / 2
+		startX3 := (width - len(resultLine3)) / 2
+
+		for i, char := range resultLine1 {
+			termbox.SetCell(startX1+i, resultY, char, termbox.ColorCyan|termbox.AttrBold, termbox.ColorDefault)
+		}
+		for i, char := range resultLine2 {
+			termbox.SetCell(startX2+i, resultY+1, char, termbox.ColorCyan, termbox.ColorDefault)
+		}
+		for i, char := range resultLine3 {
+			termbox.SetCell(startX3+i, resultY+2, char, termbox.ColorDarkGray, termbox.ColorDefault)
+		}
+	}
+
+	// Flush the buffer to the screen
+	termbox.Flush()
+}
+
+func main() {
+
+	var (
+		pythonFlag = flag.Bool("py", false, "Test on Python code like text")
+	)
+
+	flag.Parse()
+	// Initialize termbox
+	err := termbox.Init()
+	if err != nil {
+		panic(err)
+	}
+	// Ensure termbox is closed properly on exit
+	defer termbox.Close()
+
+	// Set up the initial state
+	setup(pythonFlag)
+
+	// Main event loop
+	for {
+		// Redraw the screen on every iteration
+		redrawScreen()
+
+		// Wait for an event
+		ev := termbox.PollEvent()
+
+		// Handle events based on their type
+		if ev.Type == termbox.EventKey {
+			// --- Handle Quitting ---
+			if ev.Key == termbox.KeyEsc || ev.Key == termbox.KeyCtrlC {
+				return // Exit the loop and the program
+			}
+
+			// --- Handle Restarting ---
+			if (ev.Ch == 'r' || ev.Ch == 'R') && cursorPos >= len(testText) {
+				setup(pythonFlag)
+				continue
+			}
+
+			// If test is finished, ignore other key presses
+			if cursorPos >= len(testText) {
+				continue
+			}
+
+			// --- Handle Backspace ---
+			if ev.Key == termbox.KeyBackspace || ev.Key == termbox.KeyBackspace2 {
+				if cursorPos > 0 {
+					// Move cursor back
+					states[cursorPos].isCursor = false
+					cursorPos--
+					states[cursorPos].isCursor = true
+
+					// Reset the state of the character being erased
+					if states[cursorPos].typed {
+						if !states[cursorPos].correct {
+							errors--
+						}
+						typedChars--
+						states[cursorPos].typed = false
+						states[cursorPos].correct = false
+					}
+				}
+			} else if ev.Ch != 0 || ev.Key == termbox.KeySpace {
+				// --- Handle Character Input ---
+
+				// Start the timer on the first keypress
+				if !testStarted {
+					startTime = time.Now()
+					testStarted = true
+				}
+
+				// Use a space character if the spacebar was pressed
+				typedChar := ev.Ch
+				if ev.Key == termbox.KeySpace {
+					typedChar = ' '
+				}
+
+				// Only process printable characters
+				if unicode.IsPrint(typedChar) {
+					states[cursorPos].typed = true
+					typedChars++
+
+					if typedChar == states[cursorPos].char {
+						states[cursorPos].correct = true
+					} else {
+						states[cursorPos].correct = false
+						errors++
+					}
+
+					// Move cursor forward
+					states[cursorPos].isCursor = false
+					cursorPos++
+					if cursorPos < len(testText) {
+						states[cursorPos].isCursor = true
+					}
+				}
+			}
+		}
+	}
+}
