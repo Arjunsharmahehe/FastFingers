@@ -2,10 +2,14 @@ package main
 
 import (
 	"crypto/rand"
+	"encoding/csv"
 	"flag"
 	"fmt"
+	"io"
+	"math"
 	"math/big"
 	"os"
+	"strconv"
 	"time"
 	"unicode"
 
@@ -34,19 +38,103 @@ var (
 	elapsedTime time.Duration
 )
 
-func openOrCreateCSV(filename string) (*os.File, error) {
-	return os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-}
-
 func writeToCSV(filename string, wpm float64, accuracy float64) error {
-	file, err := openOrCreateCSV(filename)
+	// Check the last rec for dupes
+	lastWPM, lastAccuracy, err := getLastRecord(filename)
+
+	// If it is the same, why write it?
+	if err == nil {
+		// Use tolerance for floating point comparison
+		const tolerance = 0.1
+		wmpSame := math.Abs(lastWPM-wpm) < tolerance
+		accuracySame := math.Abs(lastAccuracy-accuracy) < tolerance
+
+		if wmpSame && accuracySame {
+			return nil // Skip writing duplicate
+		}
+	}
+
+	// Check if file exists to determine if we need header
+	fileExists := true
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		fileExists = false
+	}
+
+	// Open file for writing (create if doesn't exist, append if it does)
+	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644) // 0644 means read/write for owner, read for group/others
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
-	_, err = file.WriteString(fmt.Sprintf("%.0f,%.1f\n", wpm, accuracy))
-	return err
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Write header if file is new
+	if !fileExists {
+		header := []string{"WPM", "Accuracy"}
+		if err := writer.Write(header); err != nil {
+			return err
+		}
+	}
+
+	// Write the current record
+	record := []string{
+		fmt.Sprintf("%.0f", wpm),
+		fmt.Sprintf("%.1f", accuracy),
+	}
+
+	return writer.Write(record)
+}
+
+func getLastRecord(filename string) (float64, float64, error) {
+	// Check if file exists
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		return 0, 0, fmt.Errorf("file does not exist")
+	}
+
+	file, err := os.Open(filename)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	var lastRecord []string
+	isFirstRow := true
+
+	// Read all records to get the last one
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, 0, err
+		}
+
+		// Skip header row
+		if isFirstRow {
+			isFirstRow = false
+			continue
+		}
+		lastRecord = record
+	}
+
+	// If no data records found (only header or empty file)
+	if len(lastRecord) < 2 {
+		return 0, 0, fmt.Errorf("no previous data records")
+	}
+
+	// Parse the last record
+	wpm, err1 := strconv.ParseFloat(lastRecord[0], 64)
+	accuracy, err2 := strconv.ParseFloat(lastRecord[1], 64)
+
+	if err1 != nil || err2 != nil {
+		return 0, 0, fmt.Errorf("error parsing last record")
+	}
+
+	return wpm, accuracy, nil
 }
 
 // setup initial state of the application
