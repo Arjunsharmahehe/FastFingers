@@ -124,9 +124,9 @@ func redrawScreen(timeLimit *int) {
 		if elapsedMinutes > 0 {
 			// WPM = (all typed characters / 5) / time in minutes
 			if elapsedTime.Seconds() > float64(*timeLimit) {
-				wpm = (float64(typedChars) / 5.0) / (float64(*timeLimit) / 60.0)
+				wpm = (float64(typedChars-errors) / 5.0) / (float64(*timeLimit) / 60.0)
 			} else {
-				wpm = (float64(typedChars) / 5.0) / elapsedMinutes
+				wpm = (float64(typedChars-errors) / 5.0) / elapsedMinutes
 			}
 		}
 		if typedChars > 0 {
